@@ -32,9 +32,9 @@ import io.netty.util.concurrent.ImmediateEventExecutor;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.reactivestreams.Publisher;
-import reactor.core.publisher.DirectProcessor;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.MonoProcessor;
+import reactor.core.publisher.Sinks;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.netty.Connection;
@@ -205,7 +205,7 @@ public class ReactorNettyTcpClient<P> implements TcpOperations<P> {
 		}
 
 		// Report first connect to the ListenableFuture
-		MonoProcessor<Void> connectMono = MonoProcessor.create();
+		MonoProcessor<Void> connectMono = MonoProcessor.fromSink(Sinks.one());
 
 		this.tcpClient
 				.handle(new ReactorNettyHandler(handler))
@@ -316,7 +316,7 @@ public class ReactorNettyTcpClient<P> implements TcpOperations<P> {
 					logger.debug("Connected to " + conn.address());
 				}
 			});
-			DirectProcessor<Void> completion = DirectProcessor.create();
+			MonoProcessor<Void> completion = MonoProcessor.fromSink(Sinks.one());
 			TcpConnection<P> connection = new ReactorNettyTcpConnection<>(inbound, outbound,  codec, completion);
 			scheduler.schedule(() -> this.connectionHandler.afterConnected(connection));
 

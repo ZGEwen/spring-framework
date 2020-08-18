@@ -34,6 +34,7 @@ import org.springframework.context.ApplicationContextAware;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.core.SpringProperties;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.format.Formatter;
 import org.springframework.format.FormatterRegistry;
@@ -108,6 +109,7 @@ import org.springframework.web.servlet.view.DefaultRequestToViewNameTranslator;
 import org.springframework.web.servlet.view.InternalResourceViewResolver;
 import org.springframework.web.servlet.view.ViewResolverComposite;
 import org.springframework.web.util.UrlPathHelper;
+import org.springframework.web.util.pattern.PathPatternParser;
 
 /**
  * This is the main class providing the configuration behind the MVC Java config.
@@ -182,6 +184,13 @@ import org.springframework.web.util.UrlPathHelper;
  * @see WebMvcConfigurer
  */
 public class WebMvcConfigurationSupport implements ApplicationContextAware, ServletContextAware {
+
+	/**
+	 * Boolean flag controlled by a {@code spring.xml.ignore} system property that instructs Spring to
+	 * ignore XML, i.e. to not initialize the XML-related infrastructure.
+	 * <p>The default is "false".
+	 */
+	private static final boolean shouldIgnoreXml = SpringProperties.getFlag("spring.xml.ignore");
 
 	private static final boolean romePresent;
 
@@ -427,7 +436,7 @@ public class WebMvcConfigurationSupport implements ApplicationContextAware, Serv
 			map.put("atom", MediaType.APPLICATION_ATOM_XML);
 			map.put("rss", MediaType.APPLICATION_RSS_XML);
 		}
-		if (jaxb2Present || jackson2XmlPresent) {
+		if (!shouldIgnoreXml && (jaxb2Present || jackson2XmlPresent)) {
 			map.put("xml", MediaType.APPLICATION_XML);
 		}
 		if (jackson2Present || gsonPresent || jsonbPresent) {
@@ -511,6 +520,7 @@ public class WebMvcConfigurationSupport implements ApplicationContextAware, Serv
 	 * <li>{@link #addInterceptors} for adding handler interceptors.
 	 * <li>{@link #addCorsMappings} to configure cross origin requests processing.
 	 * <li>{@link #configureMessageConverters} for adding custom message converters.
+	 * <li>{@link #configurePathMatch(PathMatchConfigurer)} for customizing the {@link PathPatternParser}.
 	 * </ul>
 	 * @since 5.2
 	 */
@@ -524,6 +534,12 @@ public class WebMvcConfigurationSupport implements ApplicationContextAware, Serv
 		mapping.setInterceptors(getInterceptors(conversionService, resourceUrlProvider));
 		mapping.setCorsConfigurations(getCorsConfigurations());
 		mapping.setMessageConverters(getMessageConverters());
+
+		PathPatternParser patternParser = getPathMatchConfigurer().getPatternParser();
+		if (patternParser != null) {
+			mapping.setPatternParser(patternParser);
+		}
+
 		return mapping;
 	}
 
@@ -857,11 +873,13 @@ public class WebMvcConfigurationSupport implements ApplicationContextAware, Serv
 		messageConverters.add(new StringHttpMessageConverter());
 		messageConverters.add(new ResourceHttpMessageConverter());
 		messageConverters.add(new ResourceRegionHttpMessageConverter());
-		try {
-			messageConverters.add(new SourceHttpMessageConverter<>());
-		}
-		catch (Throwable ex) {
-			// Ignore when no TransformerFactory implementation is available...
+		if (!shouldIgnoreXml) {
+			try {
+				messageConverters.add(new SourceHttpMessageConverter<>());
+			}
+			catch (Throwable ex) {
+				// Ignore when no TransformerFactory implementation is available...
+			}
 		}
 		messageConverters.add(new AllEncompassingFormHttpMessageConverter());
 
@@ -870,15 +888,17 @@ public class WebMvcConfigurationSupport implements ApplicationContextAware, Serv
 			messageConverters.add(new RssChannelHttpMessageConverter());
 		}
 
-		if (jackson2XmlPresent) {
-			Jackson2ObjectMapperBuilder builder = Jackson2ObjectMapperBuilder.xml();
-			if (this.applicationContext != null) {
-				builder.applicationContext(this.applicationContext);
+		if (!shouldIgnoreXml) {
+			if (jackson2XmlPresent) {
+				Jackson2ObjectMapperBuilder builder = Jackson2ObjectMapperBuilder.xml();
+				if (this.applicationContext != null) {
+					builder.applicationContext(this.applicationContext);
+				}
+				messageConverters.add(new MappingJackson2XmlHttpMessageConverter(builder.build()));
 			}
-			messageConverters.add(new MappingJackson2XmlHttpMessageConverter(builder.build()));
-		}
-		else if (jaxb2Present) {
-			messageConverters.add(new Jaxb2RootElementHttpMessageConverter());
+			else if (jaxb2Present) {
+				messageConverters.add(new Jaxb2RootElementHttpMessageConverter());
+			}
 		}
 
 		if (jackson2Present) {
